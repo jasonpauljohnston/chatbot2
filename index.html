@@ -83,17 +83,18 @@
             border-radius: 5px;
             margin-bottom: 8px;
         }
-        #api-key-container {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #fff3cd;
-            border-radius: 5px;
-            border: 1px solid #ffeeba;
-        }
         .status {
             font-style: italic;
             color: #666;
             margin: 10px 0;
+        }
+        #debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: none;
         }
     </style>
 </head>
@@ -101,15 +102,6 @@
     <div class="container">
         <h1>D-ID Voice Interactive Chatbot</h1>
         
-        <div id="api-key-container">
-            <p><strong>API Key Setup:</strong></p>
-            <p>For security reasons, please enter your D-ID API key below:</p>
-            <input type="password" id="api-key-input" placeholder="Enter your D-ID API key" style="width: 100%; padding: 8px; margin-bottom: 10px;">
-            <button id="save-api-key">Save API Key</button>
-            <p class="status" id="api-key-status">No API key set</p>
-            <small>Note: This key is stored only in your browser's local session and is never transmitted to any server other than D-ID.</small>
-        </div>
-
         <div id="video-container">
             <video id="avatar-video" autoplay playsinline></video>
         </div>
@@ -123,43 +115,62 @@
         <div id="conversation">
             <h3>Conversation History</h3>
         </div>
+        
+        <div id="debug-info">
+            <h4>Debug Information</h4>
+            <pre id="debug-content"></pre>
+        </div>
     </div>
 
     <script>
         // Global variables
-        let apiKey = '';
+        // API key embedded directly as requested
+        const apiKey = 'amFzb25wYXVsam9obnN0b25AZ21haWwuY29t:cqoeOkfqQsT16iiCHn5SL';
         let recognition;
         let isListening = false;
         let talkStream = null;
         let sessionId = null;
         
         // DOM elements
-        const apiKeyInput = document.getElementById('api-key-input');
-        const saveApiKeyButton = document.getElementById('save-api-key');
-        const apiKeyStatus = document.getElementById('api-key-status');
         const startButton = document.getElementById('start-button');
         const stopButton = document.getElementById('stop-button');
         const statusElement = document.getElementById('status');
         const conversationElement = document.getElementById('conversation');
         const avatarVideo = document.getElementById('avatar-video');
+        const debugContent = document.getElementById('debug-content');
+        const debugInfo = document.getElementById('debug-info');
+        
+        // Enable debug mode for troubleshooting
+        const DEBUG_MODE = true;
+        
+        if (DEBUG_MODE) {
+            debugInfo.style.display = 'block';
+        }
+        
+        function logDebug(message, data = null) {
+            if (DEBUG_MODE) {
+                const timestamp = new Date().toISOString();
+                let logMessage = `${timestamp}: ${message}`;
+                
+                if (data) {
+                    if (typeof data === 'object') {
+                        logMessage += `\n${JSON.stringify(data, null, 2)}`;
+                    } else {
+                        logMessage += `\n${data}`;
+                    }
+                }
+                
+                debugContent.textContent = logMessage + '\n\n' + debugContent.textContent;
+                console.log(message, data);
+            }
+        }
 
         // Check if the browser supports the Web Speech API
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('Your browser does not support speech recognition. Please use Chrome or Edge.');
             startButton.disabled = true;
+            logDebug('Speech recognition not supported in this browser');
         }
-
-        // Save API Key
-        saveApiKeyButton.addEventListener('click', () => {
-            apiKey = apiKeyInput.value.trim();
-            if (apiKey) {
-                apiKeyStatus.textContent = "API Key saved (for this session only)";
-                apiKeyInput.value = '';
-                startButton.disabled = false;
-            } else {
-                apiKeyStatus.textContent = "Please enter a valid API key";
-            }
-        });
 
         // Initialize speech recognition
         function initializeSpeechRecognition() {
@@ -174,10 +185,12 @@
                 statusElement.textContent = "Listening...";
                 stopButton.disabled = false;
                 startButton.disabled = true;
+                logDebug('Speech recognition started');
             };
             
             recognition.onresult = (event) => {
                 const transcript = event.results[event.results.length - 1][0].transcript;
+                logDebug('Speech recognized:', transcript);
                 addMessageToConversation('You', transcript);
                 statusElement.textContent = "Processing your message...";
                 sendMessageToDID(transcript);
@@ -186,27 +199,26 @@
             recognition.onerror = (event) => {
                 console.error('Speech recognition error', event.error);
                 statusElement.textContent = `Error: ${event.error}`;
+                logDebug('Speech recognition error:', event.error);
             };
             
             recognition.onend = () => {
                 if (isListening) {
                     recognition.start();
+                    logDebug('Restarting speech recognition');
                 } else {
                     statusElement.textContent = "Voice recognition stopped";
                     stopButton.disabled = true;
                     startButton.disabled = false;
+                    logDebug('Speech recognition ended');
                 }
             };
         }
 
         // Start voice recognition
         startButton.addEventListener('click', async () => {
-            if (!apiKey) {
-                alert('Please set your D-ID API key first');
-                return;
-            }
-
             try {
+                logDebug('Starting voice interaction...');
                 // Create a new talk session with D-ID
                 await createTalkSession();
                 
@@ -217,6 +229,7 @@
             } catch (error) {
                 console.error('Error starting the session:', error);
                 statusElement.textContent = `Error: ${error.message}`;
+                logDebug('Error starting session:', error.message);
             }
         });
 
@@ -230,12 +243,14 @@
             statusElement.textContent = "Voice interaction ended";
             stopButton.disabled = true;
             startButton.disabled = false;
+            logDebug('Voice interaction stopped by user');
         });
 
         // Create a talk session with D-ID
         async function createTalkSession() {
             try {
                 statusElement.textContent = "Initializing D-ID session...";
+                logDebug('Initializing D-ID talk session...');
                 
                 const response = await fetch('https://api.d-id.com/talks/streams', {
                     method: 'POST',
@@ -244,7 +259,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        source_url: "presenter_female", // Using D-ID's built-in presenter
+                        source_url: "https://create-images-results.d-id.com/DefaultPresenters/Noelle_f_ar_3_slim.png", // Using D-ID's built-in presenter
                         driver_url: "bank://lively/", // Using D-ID's built-in driver
                         config: {
                             stitch: true
@@ -253,10 +268,17 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
+                    const errorText = await response.text();
+                    logDebug('Error response from D-ID API:', { 
+                        status: response.status, 
+                        statusText: response.statusText,
+                        body: errorText
+                    });
+                    throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
                 }
                 
                 const data = await response.json();
+                logDebug('Talk session created successfully:', data);
                 sessionId = data.id;
                 
                 // Connect to the WebSocket stream
@@ -266,26 +288,49 @@
             } catch (error) {
                 console.error('Error creating talk session:', error);
                 statusElement.textContent = `Error: ${error.message}`;
+                logDebug('Error creating talk session:', error);
                 throw error;
             }
         }
 
         // Connect to D-ID WebSocket stream
         function connectToStream(streamId, offer) {
+            logDebug('Connecting to WebRTC stream...', { streamId });
+            
             const pc = new RTCPeerConnection({
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             });
             
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    logDebug('ICE candidate:', event.candidate);
+                }
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                logDebug('ICE connection state:', pc.iceConnectionState);
+            };
+            
             pc.ontrack = (event) => {
+                logDebug('Track received:', event.track.kind);
                 if (event.track.kind === 'video') {
                     avatarVideo.srcObject = event.streams[0];
+                    logDebug('Video track connected to video element');
                 }
             };
             
             pc.setRemoteDescription(new RTCSessionDescription(offer))
-                .then(() => pc.createAnswer())
-                .then(answer => pc.setLocalDescription(answer))
                 .then(() => {
+                    logDebug('Remote description set successfully');
+                    return pc.createAnswer();
+                })
+                .then(answer => {
+                    logDebug('Answer created');
+                    return pc.setLocalDescription(answer);
+                })
+                .then(() => {
+                    logDebug('Local description set, sending SDP to D-ID');
+                    
                     const connectionDetails = {
                         session_id: streamId,
                         answer: pc.localDescription
@@ -300,38 +345,64 @@
                         body: JSON.stringify(connectionDetails)
                     });
                 })
-                .then(response => {
+                .then(async response => {
                     if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
+                        const errorText = await response.text();
+                        logDebug('Error in SDP exchange:', {
+                            status: response.status, 
+                            statusText: response.statusText,
+                            body: errorText
+                        });
+                        throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
                     }
                     
+                    logDebug('SDP exchange successful');
+                    
                     // Connect to the WebSocket for sending messages
-                    talkStream = new WebSocket(`wss://api.d-id.com/talks/streams/${streamId}/socket?authorization=${apiKey}`);
+                    const wsUrl = `wss://api.d-id.com/talks/streams/${streamId}/socket?authorization=${apiKey}`;
+                    logDebug('Connecting to WebSocket:', wsUrl);
+                    talkStream = new WebSocket(wsUrl);
                     
                     talkStream.onopen = () => {
-                        console.log('WebSocket connection established');
+                        logDebug('WebSocket connection established');
+                        // Send a welcome message to initialize the avatar
+                        setTimeout(() => {
+                            sendMessageToDID('Hello! I am your AI assistant. How can I help you today?');
+                        }, 1000);
                     };
                     
                     talkStream.onmessage = (event) => {
-                        const message = JSON.parse(event.data);
-                        if (message.type === 'stream-error') {
-                            console.error('Stream error:', message.error);
-                            statusElement.textContent = `Stream error: ${message.error}`;
+                        try {
+                            const message = JSON.parse(event.data);
+                            logDebug('WebSocket message received:', message);
+                            
+                            if (message.type === 'stream-error') {
+                                console.error('Stream error:', message.error);
+                                statusElement.textContent = `Stream error: ${message.error}`;
+                            }
+                        } catch (e) {
+                            logDebug('Error parsing WebSocket message:', e);
                         }
                     };
                     
                     talkStream.onerror = (error) => {
                         console.error('WebSocket error:', error);
                         statusElement.textContent = 'WebSocket connection error';
+                        logDebug('WebSocket error:', error);
                     };
                     
-                    talkStream.onclose = () => {
-                        console.log('WebSocket connection closed');
+                    talkStream.onclose = (event) => {
+                        logDebug('WebSocket connection closed:', {
+                            code: event.code,
+                            reason: event.reason,
+                            wasClean: event.wasClean
+                        });
                     };
                 })
                 .catch(error => {
                     console.error('Connection error:', error);
                     statusElement.textContent = `Connection error: ${error.message}`;
+                    logDebug('Connection error:', error);
                 });
         }
 
@@ -339,11 +410,15 @@
         function sendMessageToDID(message) {
             if (!talkStream || talkStream.readyState !== WebSocket.OPEN) {
                 statusElement.textContent = "Connection not established";
+                logDebug('Cannot send message, WebSocket not open', {
+                    talkStream: talkStream ? talkStream.readyState : 'null'
+                });
                 return;
             }
             
-            // Simple prompt to make the avatar respond to the user
-            const botPrompt = generateBotResponse(message);
+            // If it's a user message, generate a bot response
+            const isUserMessage = message !== 'Hello! I am your AI assistant. How can I help you today?';
+            const botPrompt = isUserMessage ? generateBotResponse(message) : message;
             
             const talkRequest = {
                 script: {
@@ -354,27 +429,52 @@
                 }
             };
             
+            logDebug('Sending message to D-ID:', talkRequest);
             talkStream.send(JSON.stringify(talkRequest));
-            setTimeout(() => {
+            
+            if (isUserMessage) {
+                setTimeout(() => {
+                    addMessageToConversation('Bot', botPrompt);
+                    statusElement.textContent = "Listening...";
+                }, 500);
+            } else {
                 addMessageToConversation('Bot', botPrompt);
-                statusElement.textContent = "Listening...";
-            }, 500);
+            }
         }
 
         // Close the talk stream
         function closeTalkStream() {
+            logDebug('Closing talk stream...');
+            
             if (talkStream && talkStream.readyState === WebSocket.OPEN) {
                 talkStream.close();
                 talkStream = null;
+                logDebug('WebSocket connection closed');
             }
             
             if (sessionId) {
+                logDebug('Deleting D-ID session:', sessionId);
+                
                 fetch(`https://api.d-id.com/talks/streams/${sessionId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Basic ${apiKey}`
                     }
-                }).catch(error => console.error('Error closing session:', error));
+                })
+                .then(response => {
+                    if (response.ok) {
+                        logDebug('Session deleted successfully');
+                    } else {
+                        logDebug('Error deleting session:', {
+                            status: response.status,
+                            statusText: response.statusText
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error closing session:', error);
+                    logDebug('Error closing session:', error);
+                });
                 
                 sessionId = null;
             }
